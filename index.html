@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clinical Studies Semantic Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f8fafc;
+        }
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255,255,255,0.9);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .drop-zone {
+            border: 2px dashed #3b82f6;
+            transition: all 0.3s ease;
+        }
+        .drop-zone:hover {
+            background: #dbeafe;
+        }
+    </style>
+</head>
+<body>
+    <div class="loading">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold text-gray-900">Clinical Studies Semantic Analyzer</h1>
+                    <div class="flex items-center space-x-4">
+                        <span class="text-sm text-gray-500" id="studyCount">0 studies analyzed</span>
+                        <button onclick="clearAll()" class="text-sm text-red-600 hover:text-red-800">Clear All</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- Upload Section -->
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-lg font-semibold mb-4">Upload Studies</h2>
+                    <div class="drop-zone p-8 rounded-lg text-center cursor-pointer" id="dropZone">
+                        <i class="bi bi-cloud-upload text-4xl text-blue-500"></i>
+                        <p class="mt-2 text-sm text-gray-600">Drag & drop clinical study files or click to upload</p>
+                        <p class="text-xs text-gray-500 mt-1">Supported formats: PDF, DOC, DOCX, TXT</p>
+                        <input type="file" id="fileInput" class="hidden" multiple accept=".pdf,.doc,.docx,.txt">
+                    </div>
+                    <div class="mt-4">
+                        <h3 class="text-sm font-medium mb-2">Uploaded Files</h3>
+                        <div id="fileList" class="space-y-2"></div>
+                    </div>
+                </div>
+
+                <!-- Analysis Section -->
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-lg font-semibold mb-4">Semantic Analysis</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Grouping Criteria</label>
+                            <select id="groupingCriteria" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                <option value="condition">Medical Condition</option>
+                                <option value="phase">Study Phase</option>
+                                <option value="outcome">Primary Outcome</option>
+                                <option value="intervention">Intervention Type</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Similarity Threshold</label>
+                            <input type="range" id="similarityThreshold" min="0" max="100" value="70" 
+                                   class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                            <div class="flex justify-between text-xs text-gray-500">
+                                <span>Low Similarity</span>
+                                <span id="thresholdValue">70%</span>
+                                <span>High Similarity</span>
+                            </div>
+                        </div>
+                        <button onclick="analyzeStudies()" 
+                                class="w-full bg-blue-600 text-white rounded-md py-2 px-4 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                            Analyze Studies
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div class="mt-8">
+                <h2 class="text-lg font-semibold mb-4">Analysis Results</h2>
+                <div id="resultsContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- Results will be dynamically populated here -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+        const similarityThreshold = document.getElementById('similarityThreshold');
+        const thresholdValue = document.getElementById('thresholdValue');
+        const loading = document.querySelector('.loading');
+        const studyCount = document.getElementById('studyCount');
+        const resultsContainer = document.getElementById('resultsContainer');
+        
+        let uploadedFiles = [];
+
+        // Event Listeners
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('bg-blue-50');
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('bg-blue-50');
+        });
+        dropZone.addEventListener('drop', handleDrop);
+        fileInput.addEventListener('change', handleFileSelect);
+        similarityThreshold.addEventListener('input', (e) => {
+            thresholdValue.textContent = `${e.target.value}%`;
+        });
+
+        function handleDrop(e) {
+            e.preventDefault();
+            dropZone.classList.remove('bg-blue-50');
+            const files = e.dataTransfer.files;
+            handleFiles(files);
+        }
+
+        function handleFileSelect(e) {
+            const files = e.target.files;
+            handleFiles(files);
+        }
+
+        function handleFiles(files) {
+            for (let file of files) {
+                if (isValidFileType(file)) {
+                    uploadedFiles.push(file);
+                    displayFile(file);
+                }
+            }
+            updateStudyCount();
+        }
+
+        function isValidFileType(file) {
+            const validTypes = ['application/pdf', 'application/msword', 
+                              'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+            return validTypes.includes(file.type);
+        }
+
+        function displayFile(file) {
+            const fileDiv = document.createElement('div');
+            fileDiv.className = 'flex items-center justify-between bg-gray-50 p-2 rounded';
+            fileDiv.innerHTML = `
+                <span class="text-sm truncate">${file.name}</span>
+                <button onclick="removeFile('${file.name}')" class="text-red-500 hover:text-red-700">
+                    <i class="bi bi-trash"></i>
+                </button>
+            `;
+            fileList.appendChild(fileDiv);
+        }
+
+        function removeFile(fileName) {
+            uploadedFiles = uploadedFiles.filter(file => file.name !== fileName);
+            updateFileList();
+            updateStudyCount();
+        }
+
+        function updateFileList() {
+            fileList.innerHTML = '';
+            uploadedFiles.forEach(file => displayFile(file));
+        }
+
+        function updateStudyCount() {
+            studyCount.textContent = `${uploadedFiles.length} studies analyzed`;
+        }
+
+        function clearAll() {
+            uploadedFiles = [];
+            fileList.innerHTML = '';
+            resultsContainer.innerHTML = '';
+            updateStudyCount();
+        }
+
+        async function analyzeStudies() {
+            if (uploadedFiles.length === 0) {
+                alert('Please upload some studies first.');
+                return;
+            }
+
+            loading.style.display = 'flex';
+
+            try {
+                // First, upload all files to storage
+                const uploadPromises = uploadedFiles.map(async (file) => {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    formData.append('userId', 'clinical-analyzer');
+                    formData.append('appSlug', 'clinical-studies-123');
+
+                    const response = await fetch('https://r0c8kgwocscg8gsokogwwsw4.zetaverse.one/storage/upload', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ybv6MDDiwQVkZ6gH9l7OgNZhcf13'
+                        },
+                        body: formData
+                    });
+
+                    return await response.json();
+                });
+
+                const uploadResults = await Promise.all(uploadPromises);
+
+                // Now analyze each uploaded file using AI
+                const analysisPromises = uploadResults.map(async (uploadResult) => {
+                    const aiResponse = await fetch('https://r0c8kgwocscg8gsokogwwsw4.zetaverse.one/ai', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ybv6MDDiwQVkZ6gH9l7OgNZhcf13',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            messages: [{
+                                role: 'user',
+                                content: [
+                                    {
+                                        type: 'text',
+                                        text: 'Analyze this clinical study document and provide key insights about its medical condition, phase, outcomes, and intervention types.'
+                                    },
+                                    {
+                                        type: 'image_url',
+                                        image_url: {
+                                            url: uploadResult.url
+                                        }
+                                    }
+                                ]
+                            }]
+                        })
+                    });
+
+                    return await aiResponse.json();
+                });
+
+                const analysisResults = await Promise.all(analysisPromises);
+
+                // Store results in MongoDB
+                await fetch('https://r0c8kgwocscg8gsokogwwsw4.zetaverse.one/mongodb', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ybv6MDDiwQVkZ6gH9l7OgNZhcf13',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        appSlug: 'clinical-studies-123',
+                        action: 'create',
+                        collection: 'analyses',
+                        data: {
+                            timestamp: new Date().toISOString(),
+                            results: analysisResults,
+                            criteria: document.getElementById('groupingCriteria').value,
+                            threshold: similarityThreshold.value
+                        }
+                    })
+                });
+
+                // Display results
+                displayResults(analysisResults);
+            } catch (error) {
+                console.error('Error during analysis:', error);
+                alert('An error occurred during analysis. Please try again.');
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        function displayResults(results) {
+            resultsContainer.innerHTML = '';
+            
+            const groupingCriteria = document.getElementById('groupingCriteria').value;
+            const groups = {};
+
+            // Group results based on selected criteria
+            results.forEach((result, index) => {
+                const analysis = result.message;
+                let groupKey = 'Unknown';
+
+                // Extract group key based on criteria
+                if (analysis.includes(groupingCriteria)) {
+                    const regex = new RegExp(`${groupingCriteria}[:\\s]+(\\w+)`, 'i');
+                    const match = analysis.match(regex);
+                    if (match) groupKey = match[1];
+                }
+
+                if (!groups[groupKey]) {
+                    groups[groupKey] = [];
+                }
+                groups[groupKey].push({
+                    fileName: uploadedFiles[index].name,
+                    analysis: analysis
+                });
+            });
+
+            // Create and display group cards
+            Object.entries(groups).forEach(([groupName, studies]) => {
+                const groupCard = document.createElement('div');
+                groupCard.className = 'bg-white rounded-lg shadow p-4';
+                groupCard.innerHTML = `
+                    <h3 class="text-lg font-semibold mb-3">${groupName}</h3>
+                    <div class="space-y-2">
+                        ${studies.map(study => `
+                            <div class="bg-gray-50 p-3 rounded">
+                                <p class="font-medium text-sm">${study.fileName}</p>
+                                <p class="text-sm text-gray-600 mt-1">${study.analysis.substring(0, 100)}...</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="mt-3 pt-3 border-t">
+                        <p class="text-sm text-gray-500">${studies.length} studies in group</p>
+                    </div>
+                `;
+                resultsContainer.appendChild(groupCard);
+            });
+        }
+    </script>
+<script>document.body.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); return }, { passive: false })</script>
+	</body>
+</html>
